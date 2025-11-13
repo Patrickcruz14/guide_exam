@@ -1,0 +1,86 @@
+---
+- name: Configure Enterprise Service and Monitoring
+  hosts: all
+  become: yes
+  vars_files:
+    - config.yaml
+  
+  tasks:
+    # Install Nginx (Enterprise Service)
+    - name: Install Nginx on Debian/Ubuntu
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+    
+    - name: Install Nginx on CentOS
+      yum:
+        name: nginx
+        state: present
+      when: ansible_os_family == "RedHat"
+    
+    - name: Start and enable Nginx
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+    
+    # Install Node Exporter (Monitoring Tool)
+    - name: Create node_exporter user
+      user:
+        name: node_exporter
+        shell: /bin/false
+        system: yes
+        create_home: no
+    
+    - name: Download Node Exporter
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ monitoring_tool.version }}/node_exporter-{{ monitoring_tool.version }}.linux-amd64.tar.gz"
+        dest: "/tmp/node_exporter.tar.gz"
+    
+    - name: Extract Node Exporter
+      unarchive:
+        src: "/tmp/node_exporter.tar.gz"
+        dest: "/tmp"
+        remote_src: yes
+    
+    - name: Copy Node Exporter binary
+      copy:
+        src: "/tmp/node_exporter-{{ monitoring_tool.version }}.linux-amd64/node_exporter"
+        dest: "/usr/local/bin/node_exporter"
+        mode: '0755'
+        remote_src: yes
+    
+    - name: Create Node Exporter systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Node Exporter
+          After=network.target
+          
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+          
+          [Install]
+          WantedBy=multi-user.target
+    
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+    
+    - name: Start and enable Node Exporter
+      service:
+        name: node_exporter
+        state: started
+        enabled: yes
+    
+    # Change MOTD
+    - name: Update MOTD
+      copy:
+        dest: /etc/motd
+        content: "{{ motd_message }}\n"
